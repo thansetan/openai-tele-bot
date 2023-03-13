@@ -68,7 +68,7 @@ def tele_chat_completion(update, context):
     set_typing(context, update.effective_chat.id)
     convo_id = update.message.from_user.id
     if not_allowed(update):
-        text = "😡 KAMU GABOLEH PAKE BOT INI!"
+        text = "😡 You're not allowed to use this bot!"
     else:
         prompt = update.message.text
         chatbot.conversation.setdefault(convo_id, [])
@@ -90,7 +90,7 @@ def tele_chat_reset_conversation(update, context):
 
     if convo_id not in chatbot.conversation:
         if not_allowed(update):
-            text = ["😡 KAMU GABOLEH PAKE BOT INI!"]
+            text = ["😡 You're not allowed to use this bot!"]
         else:
             text = [
                 "😡 This is our first conversation, what do you want to reset you stoopid?"
@@ -115,7 +115,7 @@ def tele_image_creation(update, context):
     if not_allowed(update):
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="😡 KAMU GABOLEH PAKE BOT INI!",
+            text="😡 You're not allowed to use this bot!",
             parse_mode="markdown",
         )
     else:
@@ -151,7 +151,7 @@ def tele_audio_transcribe(update, context):
 
     set_typing(context, update.effective_chat.id)
     if not_allowed(update):
-        text = "😡 KAMU GABOLEH PAKE BOT INI!"
+        text = "😡 You're not allowed to use this bot!"
 
     elif message.reply_to_message:
         is_reply = True
@@ -199,7 +199,7 @@ def tele_audio_recording_transcribe(update, context):
     set_typing(context, update.effective_chat.id)
     file_id = update.message.voice.file_id
     if not_allowed(update):
-        text = "😡 KAMU GABOLEH PAKE BOT INI!"
+        text = "😡 You're not allowed to use this bot!"
     else:
         file = context.bot.get_file(file_id)
         file_name = f"{file_id}"
@@ -251,7 +251,7 @@ def tele_add_bot_user(update, context):
     user_id = update.message.from_user.id
 
     if not_allowed(update):
-        text = "😡 KAMU GABOLEH PAKE BOT INI!"
+        text = "😡 You're not allowed to use this bot!"
     elif user_id != initial_user:
         text = "🚫 You're not allowed to use this command."
     else:
@@ -294,7 +294,7 @@ def tele_remove_bot_user(update, context):
     user_id = update.message.from_user.id
 
     if not_allowed(update):
-        text = "😡 KAMU GABOLEH PAKE BOT INI!"
+        text = "😡 You're not allowed to use this bot!"
     elif user_id != initial_user:
         text = "🚫 You're not allowed to use this command."
     else:
