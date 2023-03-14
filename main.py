@@ -1,5 +1,6 @@
 import logging
 import os
+from tempfile import TemporaryDirectory
 
 import openai
 from dotenv import load_dotenv
@@ -26,7 +27,7 @@ load_dotenv()  # load .env file
 # OpenAI
 def authenticate(api_key):
     openai.api_key = api_key
-    chatbot = Chatbot(api_key=api_key)
+    chatbot = Chatbot(api_key=api_key, temperature=0.7)
     return chatbot
 
 
@@ -47,11 +48,36 @@ def transcribe(audio):
 
 
 # Telegram
-def start(update, context):
-    message_text = "🤖 This bot is connected to OpenAI's API. To get an idea of what this bot is capable of, type /help."
-    context.bot.send_message(
-        chat_id=update.effective_chat.id, text=message_text, parse_mode="markdown"
-    )
+bot_not_allowed = "😡 You're not allowed to use this bot!"
+cmd_not_allowed = "🚫 You're not allowed to use this command!"
+help_message = """
+*What this bot can do*:
+
+✅ Answer your questions (*ChatGPT*) - Simply type your question and send it, and the AI will provide an answer within a few seconds.
+
+✅ Make you 2 really cool AI-generated images (*DALL-E*) - Just type `/image <your-prompt-here>` and the AI will generate two images for you.
+
+✅ Get a transcript of a given audio/video (*Whisper*) - There are two ways to transcribe audio. *The first one* is by recording an audio message and sending it to the bot, and *the second one* is by uploading an audio/video file and quoting the uploaded file then type `/transcribe`.
+
+
+*Commands*:
+
+⌨️ /image - Generate 2 AI-generated images based on a given prompt (usage: `/image <your-prompt-here>`).
+
+⌨️ /transcribe - Transcribe a quoted message.
+
+⌨️ /reset - Reset your conversation with ChatGPT.
+
+⌨️ /help - Show help (this menu).
+
+*Notes*: 
+
+⚠️ The longer your conversation, the more tokens are used in each new message. So, make sure to `/reset` your conversation if you feel that your new message is not related to the previous conversation.
+
+⚠️ For the `/transcribe` command, supported file extensions are: *mp3, mp4, mpeg, mpga, m4a, wav, and webm* with a maximum file size of *25MB*.
+
+⚠️ For the list of languages supported by Whisper can be seen [here](https://github.com/openai/whisper#available-models-and-languages).
+    """
 
 
 def not_allowed(update):
@@ -64,11 +90,21 @@ def set_typing(context, effective_chat_id):
     context.bot.send_chat_action(chat_id=effective_chat_id, action=ChatAction.TYPING)
 
 
+def start(update, context):
+    message_text = "🤖 This bot is connected to OpenAI's API. To get an idea of what this bot is capable of, type /help."
+    convo_id = update.message.from_user.id
+    if convo_id in chatbot.conversation.keys():
+        chatbot.reset(convo_id)
+    context.bot.send_message(
+        chat_id=update.effective_chat.id, text=message_text, parse_mode="markdown"
+    )
+
+
 def tele_chat_completion(update, context):
     set_typing(context, update.effective_chat.id)
     convo_id = update.message.from_user.id
     if not_allowed(update):
-        text = "😡 You're not allowed to use this bot!"
+        text = bot_not_allowed
     else:
         prompt = update.message.text
         chatbot.conversation.setdefault(convo_id, [])
@@ -90,7 +126,7 @@ def tele_chat_reset_conversation(update, context):
 
     if convo_id not in chatbot.conversation:
         if not_allowed(update):
-            text = ["😡 You're not allowed to use this bot!"]
+            text = [bot_not_allowed]
         else:
             text = [
                 "😡 This is our first conversation, what do you want to reset you stoopid?"
@@ -115,7 +151,7 @@ def tele_image_creation(update, context):
     if not_allowed(update):
         context.bot.send_message(
             chat_id=update.effective_chat.id,
-            text="😡 You're not allowed to use this bot!",
+            text=bot_not_allowed,
             parse_mode="markdown",
         )
     else:
@@ -151,7 +187,7 @@ def tele_audio_transcribe(update, context):
 
     set_typing(context, update.effective_chat.id)
     if not_allowed(update):
-        text = "😡 You're not allowed to use this bot!"
+        text = bot_not_allowed
 
     elif message.reply_to_message:
         is_reply = True
@@ -176,10 +212,7 @@ def tele_audio_transcribe(update, context):
             if file_extension in allowed_files:
                 file_id = file.file_id
                 file_name = f"{file_id}.{file_extension}"
-                file.download(f"tmp/{file_name}")
-                transcript = transcribe(f"tmp/{file_name}")
-                remove_files("tmp/")
-                text = transcript
+                text = temp_save_and_transcribe(file, file_name)
             else:
                 text = "😔 File not allowed"
         else:
@@ -199,49 +232,16 @@ def tele_audio_recording_transcribe(update, context):
     set_typing(context, update.effective_chat.id)
     file_id = update.message.voice.file_id
     if not_allowed(update):
-        text = "😡 You're not allowed to use this bot!"
+        text = bot_not_allowed
     else:
         file = context.bot.get_file(file_id)
-        file_name = f"{file_id}"
-        file.download(f"tmp/{file_name}.ogg")
-        AudioSegment.from_file(f"tmp/{file_name}.ogg", format="ogg").export(
-            f"tmp/{file_name}.mp3", format="mp3"
-        )
-        text = transcribe(f"tmp/{file_name}.mp3")
-        remove_files("tmp/")
+        file_name = f"{file_id}.ogg"
+        text = temp_save_and_transcribe(file, file_name, True)
     context.bot.send_message(chat_id=update.effective_chat.id, text=text)
 
 
 def tele_help(update, context):
     set_typing(context, update.effective_chat.id)
-    help_message = """
-*What this bot can do*:
-
-✅ Answer your questions (*ChatGPT*) - Simply type your question and send it, and the AI will provide an answer within a few seconds.
-
-✅ Make you 2 really cool AI-generated images (*DALL-E*) - Just type `/image <your-prompt-here>` and the AI will generate two images for you.
-
-✅ Get a transcript of a given audio/video (*Whisper*) - There are two ways to transcribe audio. *The first one* is by recording an audio message and sending it to the bot, and *the second one* is by uploading an audio/video file and quoting the uploaded file then type `/transcribe`.
-
-
-*Commands*:
-
-⌨️ /image - Generate 2 AI-generated images based on a given prompt (usage: `/image <your-prompt-here>`).
-
-⌨️ /transcribe - Transcribe a quoted message.
-
-⌨️ /reset - Reset your conversation with ChatGPT.
-
-⌨️ /help - Show help (this menu).
-
-*Notes*: 
-
-⚠️ The longer your conversation, the more tokens are used in each new message. So, make sure to `/reset` your conversation if you feel that your new message is not related to the previous conversation.
-
-⚠️ For the `/transcribe` command, supported file extensions are: *mp3, mp4, mpeg, mpga, m4a, wav, and webm* with a maximum file size of *25MB*.
-
-⚠️ For the list of languages supported by Whisper can be seen [here](https://github.com/openai/whisper#available-models-and-languages).
-    """
     context.bot.send_message(
         chat_id=update.effective_chat.id, text=help_message, parse_mode="markdown"
     )
@@ -251,9 +251,9 @@ def tele_add_bot_user(update, context):
     user_id = update.message.from_user.id
 
     if not_allowed(update):
-        text = "😡 You're not allowed to use this bot!"
+        text = bot_not_allowed
     elif user_id != initial_user:
-        text = "🚫 You're not allowed to use this command."
+        text = cmd_not_allowed
     else:
         new_user = update.message.text.split()[1:]
         if len(new_user) > 1:
@@ -294,9 +294,9 @@ def tele_remove_bot_user(update, context):
     user_id = update.message.from_user.id
 
     if not_allowed(update):
-        text = "😡 You're not allowed to use this bot!"
+        text = bot_not_allowed
     elif user_id != initial_user:
-        text = "🚫 You're not allowed to use this command."
+        text = cmd_not_allowed
     else:
         keyboard = []
         if len(allowed_users) != 0:
@@ -328,27 +328,27 @@ def enable_logging(log_file_path):
         )
 
 
-def remove_files(dir):
-    for file in os.listdir(dir):
-        os.remove(os.path.join(dir, file))
+def temp_save_and_transcribe(file, file_name, is_voice_message=False):
+    with TemporaryDirectory() as tmp_dir:
+        tmp_file_path = os.path.join(tmp_dir, file_name)
+        file.download(tmp_file_path)
+        if is_voice_message:
+            tmp_mp3_path = os.path.splitext(tmp_file_path)[0] + ".mp3"
+            AudioSegment.from_file(tmp_file_path, format="ogg").export(
+                tmp_mp3_path, format="mp3"
+            )
+            tmp_file_path = tmp_mp3_path
+        transcript = transcribe(tmp_file_path)
+    return transcript
 
 
-def create_allowed_users_list():
-    if not os.path.exists("allowed_users.txt"):
-        open("allowed_users.txt", "a").close()
-
-
-def read_allowed_users(file):
+def read_allowed_users():
     allowed_users = []
-    with open(file, "r") as f:
-        for user in f.readlines():
-            allowed_users.append(user.strip())
+    with open("allowed_users.txt", "a+"):
+        pass
+    with open("allowed_users.txt", "r") as f:
+        allowed_users = [user.strip() for user in f.readlines()]
     return allowed_users
-
-
-def make_tmp_dir():
-    if not os.path.exists("tmp"):
-        os.makedirs("tmp")
 
 
 def main():
@@ -358,10 +358,8 @@ def main():
     log_file_path = os.getenv("LOG_FILE_PATH")
     initial_user = int(os.getenv("INITIAL_USER_ID"))
     enable_logging(log_file_path)
-    create_allowed_users_list()
-    make_tmp_dir()
     chatbot = authenticate(openai_api_key)
-    allowed_users = read_allowed_users("allowed_users.txt")
+    allowed_users = read_allowed_users()
     updater = Updater(token=telegram_bot_token)
     app = updater.dispatcher
     start_handler = CommandHandler("start", start)
@@ -378,7 +376,6 @@ def main():
     remove_user_handler = CommandHandler("removeuser", tele_remove_bot_user)
     remove_button_handler = CallbackQueryHandler(remove_user)
     help_handler = CommandHandler("help", tele_help)
-
     handler_list = [
         start_handler,
         add_user_handler,
