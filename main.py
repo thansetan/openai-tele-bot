@@ -364,7 +364,8 @@ def main():
     app = updater.dispatcher
     start_handler = CommandHandler("start", start)
     chat_completion_handler = MessageHandler(
-        Filters.text & (~Filters.command), tele_chat_completion
+        Filters.text & ~Filters.command & ~Filters.update.edited_message,
+        tele_chat_completion,
     )
     reset_handler = CommandHandler("reset", tele_chat_reset_conversation)
     image_creation_handler = CommandHandler("image", tele_image_creation)
