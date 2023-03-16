@@ -6,20 +6,11 @@ import openai
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from revChatGPT.V3 import Chatbot
-from telegram import (
-    ChatAction,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InputMediaPhoto,
-)
+from telegram import (ChatAction, InlineKeyboardButton, InlineKeyboardMarkup,
+                      InputMediaPhoto)
 from telegram.error import BadRequest
-from telegram.ext import (
-    CallbackQueryHandler,
-    CommandHandler,
-    Filters,
-    MessageHandler,
-    Updater,
-)
+from telegram.ext import (CallbackQueryHandler, CommandHandler, Filters,
+                          MessageHandler, Updater)
 
 load_dotenv()  # load .env file
 
@@ -32,7 +23,7 @@ def authenticate(api_key):
 
 
 def chat_completion(message, convo_id):
-    completion = chatbot.ask(prompt=message, convo_id=convo_id)
+    completion = chatbot.ask(prompt=message, convo_id=convo_id,)
     return completion
 
 
@@ -48,6 +39,7 @@ def transcribe(audio):
 
 
 # Telegram
+last_msg_time = {}
 bot_not_allowed = "😡 You're not allowed to use this bot!"
 cmd_not_allowed = "🚫 You're not allowed to use this command!"
 help_message = """
@@ -101,8 +93,17 @@ def start(update, context):
 
 
 def tele_chat_completion(update, context):
-    set_typing(context, update.effective_chat.id)
     convo_id = update.message.from_user.id
+    if last_msg_time.get(convo_id):
+        time_diff = update.message.date - last_msg_time[convo_id]
+        if time_diff.total_seconds()/3600 > 3:
+            chatbot.reset(convo_id)
+            context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="⌛ Our conversation has been reset due to inactivity.",
+            )
+    set_typing(context, update.effective_chat.id)
+    last_msg_time[convo_id] = update.message.date
     if not_allowed(update):
         text = bot_not_allowed
     else:
@@ -110,15 +111,16 @@ def tele_chat_completion(update, context):
         chatbot.conversation.setdefault(convo_id, [])
         response = chat_completion(prompt, convo_id)
         chatbot.add_to_conversation(prompt, "user", convo_id)
-        try:
-            context.bot.send_message(
-                chat_id=update.effective_chat.id, text=response, parse_mode="markdown"
-            )
-        except BadRequest as e:
-            logging.error(f"Can't send message using markdown: {e}")
-            context.bot.send_message(chat_id=update.effective_chat.id, text=response)
-        return
-    context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+        text = response
+    try:
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            parse_mode="markdown",
+        )
+    except BadRequest as e:
+        logging.error(f"Can't send message using markdown: {e}")
+        context.bot.send_message(chat_id=update.effective_chat.id, text=text)
 
 
 def tele_chat_reset_conversation(update, context):
