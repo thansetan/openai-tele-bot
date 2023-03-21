@@ -70,7 +70,7 @@ async def tele_chat_completion(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = update.effective_chat.id
     if last_msg_time.get(convo_id) and not not_allowed(update):
         time_diff = update.message.date - last_msg_time[convo_id]
-        if time_diff.total_seconds() > 30:
+        if time_diff.total_seconds() / 3600 > 3:
             openai.reset_conversation(convo_id)
             await context.bot.send_message(
                 chat_id=chat_id,
