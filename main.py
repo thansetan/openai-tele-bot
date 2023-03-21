@@ -23,7 +23,10 @@ def authenticate(api_key):
 
 
 def chat_completion(message, convo_id):
-    completion = chatbot.ask(prompt=message, convo_id=convo_id,)
+    completion = chatbot.ask(
+        prompt=message,
+        convo_id=convo_id,
+    )
     return completion
 
 
@@ -96,7 +99,7 @@ def tele_chat_completion(update, context):
     convo_id = update.message.from_user.id
     if last_msg_time.get(convo_id):
         time_diff = update.message.date - last_msg_time[convo_id]
-        if time_diff.total_seconds()/3600 > 3:
+        if time_diff.total_seconds() / 3600 > 3:
             chatbot.reset(convo_id)
             context.bot.send_message(
                 chat_id=update.effective_chat.id,
@@ -135,6 +138,7 @@ def tele_chat_reset_conversation(update, context):
             ]
     else:
         chatbot.reset(convo_id)
+        last_msg_time.pop(convo_id, None)
         text = [
             "🤓 Our conversation has been reset, and now it's like we're two people who have just met and don't know each other yet.",
             "🤖 Hi, I'm ChatGPT. What can I do to help you?",
@@ -206,7 +210,7 @@ def tele_audio_transcribe(update, context):
             if file_size <= max_file_size:
                 file = message.reply_to_message.audio.get_file()
         elif message.reply_to_message.document:
-            message.reply_to_message.document.file_size
+            file_size = message.reply_to_message.document.file_size
             if file_size <= max_file_size:
                 file = message.reply_to_message.document.get_file()
         if file:
