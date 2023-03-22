@@ -6,11 +6,20 @@ import openai
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from revChatGPT.V3 import Chatbot
-from telegram import (ChatAction, InlineKeyboardButton, InlineKeyboardMarkup,
-                      InputMediaPhoto)
+from telegram import (
+    ChatAction,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    InputMediaPhoto,
+)
 from telegram.error import BadRequest
-from telegram.ext import (CallbackQueryHandler, CommandHandler, Filters,
-                          MessageHandler, Updater)
+from telegram.ext import (
+    CallbackQueryHandler,
+    CommandHandler,
+    Filters,
+    MessageHandler,
+    Updater,
+)
 
 load_dotenv()  # load .env file
 
@@ -129,7 +138,10 @@ def tele_chat_completion(update, context):
 def tele_chat_reset_conversation(update, context):
     convo_id = update.message.from_user.id
 
-    if convo_id not in chatbot.conversation:
+    if (
+        convo_id not in chatbot.conversation
+        or len(chatbot.conversation.get(convo_id)) == 1
+    ):
         if not_allowed(update):
             text = [bot_not_allowed]
         else:
