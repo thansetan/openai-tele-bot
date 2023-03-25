@@ -5,16 +5,12 @@ from tempfile import TemporaryDirectory
 from dotenv import load_dotenv
 from open_ai import OpenAI
 from pydub import AudioSegment
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, Update
+from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
+                      InputMediaPhoto, Update)
 from telegram.error import BadRequest
-from telegram.ext import (
-    ApplicationBuilder,
-    CallbackQueryHandler,
-    CommandHandler,
-    ContextTypes,
-    MessageHandler,
-    filters,
-)
+from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
+                          CommandHandler, ContextTypes, MessageHandler,
+                          filters)
 
 last_msg_time = {}
 bot_not_allowed = "😡 You're not allowed to use this bot!"
@@ -79,20 +75,43 @@ async def tele_chat_completion(update: Update, context: ContextTypes.DEFAULT_TYP
     last_msg_time[convo_id] = update.message.date
     await context.bot.send_chat_action(chat_id, "typing")
     if not_allowed(update):
-        text = bot_not_allowed
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=bot_not_allowed,
+        )
     else:
         message = update.message.text
         if convo_id not in openai.conversation:
             openai.conversation.setdefault(convo_id, [])
         messages = openai.generate_messages(message, openai.conversation.get(convo_id))
-        text = await openai.chat_completion(messages)
-    try:
-        await context.bot.send_message(
-            chat_id=chat_id, text=text, parse_mode="markdown"
-        )
-    except BadRequest as e:
-        logging.error(f"Can't send message using markdown: {e}")
-        await context.bot.send_message(chat_id=chat_id, text=text)
+        gen = openai.chat_completion(messages)
+        tmp_ans = ""
+        sent = False
+        async for gen_item in gen:
+            status, answer = gen_item
+            if answer and not sent:
+                msg = await context.bot.send_message(chat_id=chat_id, text=answer)
+                sent = True
+            if len(answer) - len(tmp_ans) < 100 and status != "finished":
+                continue                
+            else:
+                try:
+                    await context.bot.edit_message_text(
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        text=answer,
+                        parse_mode="markdown",
+                    )
+                except BadRequest as e:
+                    if "not modified" in str(e):
+                        pass
+                    else:
+                        await context.bot.edit_message_text(
+                            chat_id=update.effective_chat.id,
+                            message_id=msg.message_id,
+                            text=answer
+                        )
+                tmp_ans = answer
 
 
 async def tele_conversation_reset(update: Update, context: ContextTypes.DEFAULT_TYPE):

@@ -1,7 +1,7 @@
 import openai
 
 PARAMS = {
-    "chatgpt": {"model": "gpt-3.5-turbo", "temperature": 0.7},
+    "chatgpt": {"model": "gpt-3.5-turbo", "temperature": 0.7, "stream": True},
     "dall_e": {"n": 2, "size": "1024x1024", "response_format": "url"},
     "whisper": {"model": "whisper-1", "temperature": 0.7, "response_format": "text"},
 }
@@ -15,12 +15,19 @@ class OpenAI:
 
     # ChatGPT
     async def chat_completion(self, messages):
-        resp = await openai.ChatCompletion.acreate(
-            messages=messages, **PARAMS["chatgpt"]
-        )
-        resp_text = resp.choices[0].message.content
-        self.generate_messages(resp_text, messages, False)
-        return resp_text
+        answer = ""
+        while not answer:
+            resp_gen = await openai.ChatCompletion.acreate(
+                messages=messages, **PARAMS["chatgpt"]
+            )
+            answer = ""
+            async for resp_item in resp_gen:
+                delta = resp_item.choices[0].delta
+                if "content" in delta:
+                    answer += delta.content
+                    yield "not_finished", answer
+        self.generate_messages(answer, messages, False)
+        yield "finished", answer
 
     def generate_messages(self, prompt, messages=[], is_user=True):
         if not messages:
