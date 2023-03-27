@@ -142,6 +142,7 @@ async def tele_conversation_reset(update: Update, context: ContextTypes.DEFAULT_
 async def tele_image_creation(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     message = update.message
+    text = None
     await context.bot.send_chat_action(update.effective_chat.id, "typing")
     if not_allowed(update):
         text = bot_not_allowed
@@ -159,12 +160,13 @@ async def tele_image_creation(update: Update, context: ContextTypes.DEFAULT_TYPE
             )
         else:
             text = "🥺 Please enter the prompt (`/image <your-prompt-here>`)"
-    await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=text,
-        reply_to_message_id=message.message_id,
-        parse_mode="markdown",
-    )
+    if text:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_to_message_id=message.message_id,
+            parse_mode="markdown",
+        )
 
 
 async def tele_audio_transcription(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -365,7 +367,7 @@ def main():
             CommandHandler("transcribe", tele_audio_transcription),
             CommandHandler("help", tele_help),
             CommandHandler("adduser", tele_add_bot_user),
-            CommandHandler("remove", tele_remove_bot_user),
+            CommandHandler("removeuser", tele_remove_bot_user),
             MessageHandler(filters.VOICE, tele_audio_recording_transcription),
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND & ~filters.UpdateType.EDITED_MESSAGE,
