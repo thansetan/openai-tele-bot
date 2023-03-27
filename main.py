@@ -2,52 +2,16 @@ import logging
 import os
 from tempfile import TemporaryDirectory
 
-import openai
 from dotenv import load_dotenv
+from open_ai import OpenAI
 from pydub import AudioSegment
-from revChatGPT.V3 import Chatbot
-from telegram import (
-    ChatAction,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    InputMediaPhoto,
-)
+from telegram import (ChatAction, InlineKeyboardButton, InlineKeyboardMarkup,
+                      InputMediaPhoto)
 from telegram.error import BadRequest
-from telegram.ext import (
-    CallbackQueryHandler,
-    CommandHandler,
-    Filters,
-    MessageHandler,
-    Updater,
-)
+from telegram.ext import (CallbackQueryHandler, CommandHandler, Filters,
+                          MessageHandler, Updater)
 
 load_dotenv()  # load .env file
-
-
-# OpenAI
-def authenticate(api_key):
-    openai.api_key = api_key
-    chatbot = Chatbot(api_key=api_key, temperature=0.7)
-    return chatbot
-
-
-def chat_completion(message, convo_id):
-    completion = chatbot.ask(
-        prompt=message,
-        convo_id=convo_id,
-    )
-    return completion
-
-
-def generate_image(prompt):
-    image = openai.Image.create(prompt=prompt, n=2, size="1024x1024")
-    return image.get("data")
-
-
-def transcribe(audio):
-    audio = open(audio, "rb")
-    transcript = openai.Audio.transcribe("whisper-1", audio).get("text")
-    return transcript
 
 
 # Telegram
@@ -97,8 +61,8 @@ def set_typing(context, effective_chat_id):
 def start(update, context):
     message_text = "🤖 This bot is connected to OpenAI's API. To get an idea of what this bot is capable of, type /help."
     convo_id = update.message.from_user.id
-    if convo_id in chatbot.conversation.keys():
-        chatbot.reset(convo_id)
+    if convo_id in openai.conversation.keys():
+        openai.reset_conversation(convo_id)
     context.bot.send_message(
         chat_id=update.effective_chat.id, text=message_text, parse_mode="markdown"
     )
@@ -106,42 +70,61 @@ def start(update, context):
 
 def tele_chat_completion(update, context):
     convo_id = update.message.from_user.id
-    if last_msg_time.get(convo_id):
+    chat_id = update.effective_chat.id
+    if last_msg_time.get(convo_id) and not not_allowed(update):
         time_diff = update.message.date - last_msg_time[convo_id]
         if time_diff.total_seconds() / 3600 > 3:
-            chatbot.reset(convo_id)
+            openai.reset_conversation(convo_id)
             context.bot.send_message(
-                chat_id=update.effective_chat.id,
+                chat_id=chat_id,
                 text="⌛ Our conversation has been reset due to inactivity.",
             )
-    set_typing(context, update.effective_chat.id)
     last_msg_time[convo_id] = update.message.date
+    set_typing(context, chat_id)
     if not_allowed(update):
-        text = bot_not_allowed
-    else:
-        prompt = update.message.text
-        chatbot.conversation.setdefault(convo_id, [])
-        response = chat_completion(prompt, convo_id)
-        chatbot.add_to_conversation(prompt, "user", convo_id)
-        text = response
-    try:
         context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=text,
-            parse_mode="markdown",
+            chat_id=chat_id,
+            text=bot_not_allowed,
         )
-    except BadRequest as e:
-        logging.error(f"Can't send message using markdown: {e}")
-        context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+    else:
+        message = update.message.text
+        if convo_id not in openai.conversation:
+            openai.conversation.setdefault(convo_id, [])
+        messages = openai.generate_messages(message, openai.conversation.get(convo_id))
+        gen = openai.chat_completion(messages)
+        tmp_ans = ""
+        sent = False
+        for gen_item in gen:
+            status, answer = gen_item
+            if answer and not sent:
+                msg = context.bot.send_message(chat_id=chat_id, text=answer)
+                sent = True
+            if len(answer) - len(tmp_ans) < 100 and status != "finished":
+                continue
+            else:
+                try:
+                    context.bot.edit_message_text(
+                        chat_id=update.effective_chat.id,
+                        message_id=msg.message_id,
+                        text=answer,
+                        parse_mode="markdown",
+                    )
+                except BadRequest as e:
+                    if "not modified" in str(e):
+                        pass
+                    else:
+                        context.bot.edit_message_text(
+                            chat_id=update.effective_chat.id,
+                            message_id=msg.message_id,
+                            text=answer,
+                        )
+                tmp_ans = answer
 
 
 def tele_chat_reset_conversation(update, context):
     convo_id = update.message.from_user.id
-
-    if (
-        convo_id not in chatbot.conversation
-        or len(chatbot.conversation.get(convo_id)) == 1
-    ):
+    chat_id = update.effective_chat.id
+    if convo_id not in openai.conversation:
         if not_allowed(update):
             text = [bot_not_allowed]
         else:
@@ -149,7 +132,8 @@ def tele_chat_reset_conversation(update, context):
                 "😡 This is our first conversation, what do you want to reset you stoopid?"
             ]
     else:
-        chatbot.reset(convo_id)
+        last_msg_time.pop(convo_id, None)
+        openai.reset_conversation(convo_id)
         last_msg_time.pop(convo_id, None)
         text = [
             "🤓 Our conversation has been reset, and now it's like we're two people who have just met and don't know each other yet.",
@@ -157,7 +141,7 @@ def tele_chat_reset_conversation(update, context):
         ]
     for t in text:
         context.bot.send_message(
-            chat_id=update.effective_chat.id,
+            chat_id=chat_id,
             text=t,
         )
 
@@ -176,7 +160,7 @@ def tele_image_creation(update, context):
         message_content = message.text.split(" ", 1)
         if len(message_content) > 1:
             prompt = message_content[1]
-            images = generate_image(prompt)
+            images = openai.image_creation(prompt)
             image_list = [
                 InputMediaPhoto(
                     media=data.get("url"), caption=f"🧑🏽‍🎨 image no {i} of {prompt}"
@@ -356,7 +340,7 @@ def temp_save_and_transcribe(file, file_name, is_voice_message=False):
                 tmp_mp3_path, format="mp3"
             )
             tmp_file_path = tmp_mp3_path
-        transcript = transcribe(tmp_file_path)
+        transcript = openai.audio_transcription(tmp_file_path)
     return transcript
 
 
@@ -370,13 +354,13 @@ def read_allowed_users():
 
 
 def main():
-    global chatbot, initial_user, allowed_users
+    global openai, initial_user, allowed_users
     openai_api_key = os.getenv("OPENAI_API_KEY")
     telegram_bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
     log_file_path = os.getenv("LOG_FILE_PATH")
     initial_user = int(os.getenv("INITIAL_USER_ID"))
     enable_logging(log_file_path)
-    chatbot = authenticate(openai_api_key)
+    openai = OpenAI(openai_api_key)
     allowed_users = read_allowed_users()
     updater = Updater(token=telegram_bot_token)
     app = updater.dispatcher
