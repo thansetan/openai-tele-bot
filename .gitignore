@@ -3,3 +3,6 @@ __pycache__
 *.log
 allowed_users.txt
 tmp
+fly.toml
+teleopenai
+*docker*

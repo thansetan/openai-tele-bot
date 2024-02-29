@@ -1,9 +1,9 @@
 import logging
 import os
+import sys
 from tempfile import TemporaryDirectory
 
 from dotenv import load_dotenv
-from open_ai import OpenAI
 from pydub import AudioSegment
 from telegram import (InlineKeyboardButton, InlineKeyboardMarkup,
                       InputMediaPhoto, Update)
@@ -11,6 +11,8 @@ from telegram.error import BadRequest
 from telegram.ext import (ApplicationBuilder, CallbackQueryHandler,
                           CommandHandler, ContextTypes, MessageHandler,
                           filters)
+
+from open_ai import OpenAI
 
 last_msg_time = {}
 bot_not_allowed = "😡 You're not allowed to use this bot!"
@@ -93,7 +95,7 @@ async def tele_chat_completion(update: Update, context: ContextTypes.DEFAULT_TYP
                 msg = await context.bot.send_message(chat_id=chat_id, text=answer)
                 sent = True
             if len(answer) - len(tmp_ans) < 100 and status != "finished":
-                continue                
+                continue
             else:
                 try:
                     await context.bot.edit_message_text(
@@ -109,7 +111,7 @@ async def tele_chat_completion(update: Update, context: ContextTypes.DEFAULT_TYP
                         await context.bot.edit_message_text(
                             chat_id=update.effective_chat.id,
                             message_id=msg.message_id,
-                            text=answer
+                            text=answer,
                         )
                 tmp_ans = answer
 
@@ -320,14 +322,23 @@ def read_allowed_users():
 
 
 def enable_logging(log_file_path):
+    logger = logging.getLogger()
+    logger.setLevel(logging.ERROR)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
     if log_file_path:
         if not os.path.exists(log_file_path):
+            os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
             open(log_file_path, "a").close()
-        logging.basicConfig(
-            filename="bot.log",
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-            level=logging.ERROR,
-        )
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setLevel(logging.ERROR)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+    stream_handler = logging.StreamHandler(sys.stderr)
+    stream_handler.setLevel(logging.ERROR)
+    stream_handler.setFormatter(formatter)
+    logger.addHandler(stream_handler)
 
 
 async def temp_save_and_transcribe(file, file_name, is_voice_message=False):
@@ -355,8 +366,9 @@ def main():
     telegram_token = os.getenv("TELEGRAM_BOT_TOKEN")
     initial_user = int(os.getenv("INITIAL_USER_ID"))
     log_file_path = os.getenv("LOG_FILE_PATH")
+    gpt_prompt = os.getenv("GPT_PROMPT")
     enable_logging(log_file_path)
-    openai = OpenAI(openai_api_key)
+    openai = OpenAI(openai_api_key, gpt_prompt)
     allowed_users = read_allowed_users()
     bot = ApplicationBuilder().token(telegram_token).concurrent_updates(True).build()
     bot.add_handlers(
